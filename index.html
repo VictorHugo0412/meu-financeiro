@@ -95,7 +95,7 @@ const fmtAt=a=>`${a.slice(8,10)}/${a.slice(5,7)}/${a.slice(0,4)} ${a.slice(11)}`
 function addM(k,n){let y=+k.slice(0,4),m=+k.slice(5)-1+n;y+=Math.floor(m/12);m=((m%12)+12)%12;return y+'-'+String(m+1).padStart(2,'0')}
 
 function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r)}catch(e){}return null}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){S._at=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}push()}
 const fresh=()=>({init:null,tx:[],cats:DEF.map(n=>({n,l:0})),sims:[],reports:{},fixed:[]});
 let S=Object.assign(fresh(),load()||{}),tab='home',repMonth=null,lastM=cm(),rs=0;
 
@@ -148,6 +148,7 @@ function vHome(){const k=cm(),s=snap(k),L=S.tx.filter(t=>mk(t)===k).sort((a,b)=>
   <div class="card"><h3>Lançamentos do mês</h3>${L.length?L.map(t=>`<div class="item between"><div><div>${esc(t.d||t.c)} <span class="tag">${esc(t.c)}</span></div><div class="mut">${fmtAt(t.at)}</div></div><div style="text-align:right"><b class="${t.t==='r'?'pos':'neg'}">${t.t==='r'?'+':'−'}${BRL(t.v)}</b><br><button class="sec" onclick="delTx(${t.id})">Excluir</button></div></div>`).join(''):'<div class="mut">Nenhum lançamento neste mês.</div>'}</div>
   <details><summary>Ajustes</summary><div class="card"><div class="mut">Corrigir o saldo atual (ajusta o saldo inicial, sem apagar lançamentos)</div>
   <input id="nb" type="number" step="0.01" inputmode="decimal" placeholder="Saldo correto (R$)"><button class="sec" onclick="setBal()">Corrigir saldo</button>
+  <div style="margin-top:14px"><div class="mut">Backup para levar os dados a outro aparelho: gere aqui, cole no outro e restaure.</div><textarea id="bk" rows="3" placeholder="Cole o backup aqui para restaurar" style="width:100%;margin:6px 0;padding:10px;border-radius:14px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:12px monospace"></textarea><div class="between"><button class="sec" onclick="bkGen()">Gerar e copiar</button><button class="sec" onclick="bkRes()">Restaurar</button></div></div>
   <div style="margin-top:14px"><button class="sec" onclick="reset()">Apagar todos os dados</button></div></div></details>`}
 
 function vCats(){const s=snap(cm());
@@ -219,10 +220,24 @@ function vFix(){const k=cm(),F=S.fixed,paid=F.filter(f=>f.paid===k),tot=F.reduce
  return `<div class="card"><h3>✅ Gastos fixos de ${ml(k)}</h3><div class="between"><span class="mut">${paid.length} de ${F.length} pagos</span><b>${pc}%</b></div><div class="bar"><i style="width:${pc}%"></i></div><div class="between mut"><span>Pago: <b class="neg">${BRL(pg)}</b></span><span>Pendente: <b>${BRL(tot-pg)}</b></span></div></div>
  <div class="card"><h3>Checklist (${F.length}/20)</h3><div class="mut">Ao marcar, o valor sai do saldo. Desmarque para estornar. A cada mês a lista reinicia.</div>${F.length?F.map(f=>{const on=f.paid===k;return `<div class="fx ${on?'done':''}"><div class="between"><label class="chk"><input type="checkbox" ${on?'checked':''} onchange="togFx(${f.id})"><span class="box"></span></label><input value="${esc(f.n)}" ${on?'disabled':''} onchange="setFx(${f.id},'n',this.value)"><button class="sec" onclick="delFx(${f.id})">✕</button></div><div class="between"><input type="number" step="0.01" min="0" inputmode="decimal" value="${f.v}" ${on?'disabled':''} onchange="setFx(${f.id},'v',this.value)"><select ${on?'disabled':''} onchange="setFx(${f.id},'c',this.value)">${opts(f.c)}</select></div></div>`}).join(''):'<div class="mut" style="margin-top:8px">Nenhum gasto fixo ainda. Comece com aluguel, internet, mensalidade…</div>'}</div>
  <div class="card"><h3>Novo gasto fixo</h3>${F.length>=20?'<div class="mut">Limite de 20 itens atingido. Remova algum para adicionar outro.</div>':`<input id="fn" placeholder="Nome (ex.: Aluguel)"><input id="fv" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Valor (R$)"><select id="fc">${opts('Contas')}</select><button class="pri" onclick="addFx()">Adicionar</button>`}</div>`}
-function tick(){const e=$('#clk');if(e)e.textContent=new Date().toLocaleString('pt-BR',{timeZone:TZ,dateStyle:'full',timeStyle:'medium'})+' · Brasília'}
+function bkGen(){const t=$('#bk');t.value=JSON.stringify(S);t.select();try{navigator.clipboard.writeText(t.value).then(()=>toast('Backup copiado. Cole no outro aparelho.'),()=>toast('Selecione e copie o texto do campo.'))}catch(e){toast('Selecione e copie o texto do campo.')}}
+function bkRes(){try{const o=JSON.parse($('#bk').value.trim());if(!o||!Array.isArray(o.tx)||typeof o.init!=='number')throw 0;S=Object.assign(fresh(),o);save();ensureReports();render();toast('Backup restaurado.')}catch(e){toast('Backup inválido. Cole o texto completo.')}}
+function tick(){const y=$('#syn');if(y)y.textContent=dbd?'☁️ Sincronizado entre aparelhos':'📴 Salvo só neste aparelho';const e=$('#clk');if(e)e.textContent=new Date().toLocaleString('pt-BR',{timeZone:TZ,dateStyle:'full',timeStyle:'medium'})+' · Brasília'}
 function render(){const a=$('#app');
+  if(S.init===null&&loading){a.innerHTML='<div class="welcome"><div class="logo">☁️</div><p>Sincronizando seus dados…</p></div>';return}
   if(S.init===null){a.innerHTML=`<div class="welcome"><div class="logo">💰</div><h1>Meu Financeiro</h1><p>Seu dinheiro, claro e sob controle.</p></div><div class="card"><h3>Qual é o seu saldo hoje?</h3><div class="mut">Informe o saldo atual da sua conta para começar.</div><input id="i0" type="number" step="0.01" inputmode="decimal" placeholder="Saldo atual (R$)"><button class="pri" onclick="start()">Começar</button></div>`;return}
-  a.innerHTML=`<header class="hd"><div><h1>Meu Financeiro</h1><div class="mut" id="clk"></div></div><div class="logo">💰</div></header><nav>${[['home','<i>🏠</i>Início'],['fix','<i>✅</i>Fixos'],['cats','<i>🏷️</i>Limites'],['sim','<i>🔮</i>Simular'],['rep','<i>📊</i>Relatório']].map(([k,n])=>`<button class="${tab===k?'on':''}" onclick="go('${k}')">${n}</button>`).join('')}</nav><main>${{home:vHome,fix:vFix,cats:vCats,sim:vSim,rep:vRep}[tab]()}</main>`;tick()}
+  a.innerHTML=`<header class="hd"><div><h1>Meu Financeiro</h1><div class="mut" id="clk"></div><div class="mut" id="syn"></div></div><div class="logo">💰</div></header><nav>${[['home','<i>🏠</i>Início'],['fix','<i>✅</i>Fixos'],['cats','<i>🏷️</i>Limites'],['sim','<i>🔮</i>Simular'],['rep','<i>📊</i>Relatório']].map(([k,n])=>`<button class="${tab===k?'on':''}" onclick="go('${k}')">${n}</button>`).join('')}</nav><main>${{home:vHome,fix:vFix,cats:vCats,sim:vSim,rep:vRep}[tab]()}</main>`;tick()}
+let dbd=null,pt,loading=typeof claude!=='undefined';
+function push(){if(!dbd)return;clearTimeout(pt);pt=setTimeout(()=>dbd.set({s:S,at:S._at}).catch(()=>toast('Sem conexão: salvo só neste aparelho por enquanto.')),700)}
+(async()=>{try{const[c,u]=await Promise.all([claude.use('db'),claude.use('user')]),id=c&&u&&await u.id();
+ if(!id){loading=false;render();return}
+ dbd=c.collection('data/users/'+id).doc('app');
+ dbd.onSnapshot(snap=>{let ch=loading;loading=false;
+  if(!snap.exists){if(S.init!==null){S._at=S._at||Date.now();push()}}
+  else{const r=snap.data();if(r&&r.s&&r.at>(S._at||0)){S=Object.assign(fresh(),r.s);try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}ensureReports();ch=true}}
+  if(ch)render()},()=>{loading=false;render()});
+ setTimeout(()=>{if(loading){loading=false;render()}},10000)
+}catch(e){loading=false;render()}})();
 setInterval(()=>{tick();if(cm()!==lastM){lastM=cm();ensureReports();render()}},1000);
 ensureReports();render();
 </script>
